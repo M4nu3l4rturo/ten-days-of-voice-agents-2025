@@ -1,61 +1,229 @@
-import { Button } from '@/components/livekit/button';
+import React, { forwardRef } from 'react';
 
-function WelcomeImage() {
+// =============================================================================
+// UTILIDADES
+// =============================================================================
+
+/**
+ * Utilidad cn: combina condicionalmente clases de Tailwind.
+ */
+const cn = (...classes: (string | boolean | undefined)[]) => classes.filter(Boolean).join(' ');
+
+// =============================================================================
+// COMPONENTE BUTTON
+// =============================================================================
+
+interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: 'default' | 'primary';
+  size?: 'default' | 'sm' | 'lg';
+}
+
+const Button = forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ children, className, variant = 'default', size = 'default', disabled = false, ...props }, ref) => {
+    const baseClasses = 'inline-flex items-center justify-center whitespace-nowrap rounded-lg text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50';
+
+    const sizeClasses = {
+      default: 'h-10 px-4 py-2',
+      sm: 'h-9 rounded-md px-3',
+      lg: 'h-12 px-6 rounded-xl text-lg',
+    }[size];
+
+    const variantClasses = {
+      default: 'bg-gray-700 text-gray-200 shadow-sm hover:bg-gray-600 focus-visible:ring-gray-400',
+      primary: 'bg-gradient-to-r from-orange-600 to-orange-500 text-white shadow-lg hover:from-orange-500 hover:to-orange-400 focus-visible:ring-orange-400',
+    }[variant];
+
+    return (
+      <button
+        ref={ref}
+        disabled={disabled}
+        className={cn(baseClasses, sizeClasses, variantClasses, className)}
+        {...props}
+      >
+        {children}
+      </button>
+    );
+  }
+);
+
+Button.displayName = 'Button';
+
+// =============================================================================
+// ICONO QUICKBASKET
+// =============================================================================
+
+function QuickBasketIcon() {
   return (
     <svg
-      width="64"
-      height="64"
-      viewBox="0 0 64 64"
+      width="80"
+      height="80"
+      viewBox="0 0 80 80"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      className="text-fg0 mb-4 size-16"
+      className="mb-6 drop-shadow-xl"
     >
+      <defs>
+        <linearGradient id="basketGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#FF6B35" />
+          <stop offset="100%" stopColor="#FF9B66" />
+        </linearGradient>
+      </defs>
+      {/* Cuerpo del carrito */}
       <path
-        d="M15 24V40C15 40.7957 14.6839 41.5587 14.1213 42.1213C13.5587 42.6839 12.7956 43 12 43C11.2044 43 10.4413 42.6839 9.87868 42.1213C9.31607 41.5587 9 40.7957 9 40V24C9 23.2044 9.31607 22.4413 9.87868 21.8787C10.4413 21.3161 11.2044 21 12 21C12.7956 21 13.5587 21.3161 14.1213 21.8787C14.6839 22.4413 15 23.2044 15 24ZM22 5C21.2044 5 20.4413 5.31607 19.8787 5.87868C19.3161 6.44129 19 7.20435 19 8V56C19 56.7957 19.3161 57.5587 19.8787 58.1213C20.4413 58.6839 21.2044 59 22 59C22.7956 59 23.5587 58.6839 24.1213 58.1213C24.6839 57.5587 25 56.7957 25 56V8C25 7.20435 24.6839 6.44129 24.1213 5.87868C23.5587 5.31607 22.7956 5 22 5ZM32 13C31.2044 13 30.4413 13.3161 29.8787 13.8787C29.3161 14.4413 29 15.2044 29 16V48C29 48.7957 29.3161 49.5587 29.8787 50.1213C30.4413 50.6839 31.2044 51 32 51C32.7956 51 33.5587 50.6839 34.1213 50.1213C34.6839 49.5587 35 48.7957 35 48V16C35 15.2044 34.6839 14.4413 34.1213 13.8787C33.5587 13.3161 32.7956 13 32 13ZM42 21C41.2043 21 40.4413 21.3161 39.8787 21.8787C39.3161 22.4413 39 23.2044 39 24V40C39 40.7957 39.3161 41.5587 39.8787 42.1213C40.4413 42.6839 41.2043 43 42 43C42.7957 43 43.5587 42.6839 44.1213 42.1213C44.6839 41.5587 45 40.7957 45 40V24C45 23.2044 44.6839 22.4413 44.1213 21.8787C43.5587 21.3161 42.7957 21 42 21ZM52 17C51.2043 17 50.4413 17.3161 49.8787 17.8787C49.3161 18.4413 49 19.2044 49 20V44C49 44.7957 49.3161 45.5587 49.8787 46.1213C50.4413 46.6839 51.2043 47 52 47C52.7957 47 53.5587 46.6839 54.1213 46.1213C54.6839 45.5587 55 44.7957 55 44V20C55 19.2044 54.6839 18.4413 54.1213 17.8787C53.5587 17.3161 52.7957 17 52 17Z"
-        fill="currentColor"
+        d="M20 25H60L55 50H25L20 25Z"
+        fill="url(#basketGradient)"
+        stroke="#FF6B35"
+        strokeWidth="3"
+        strokeLinejoin="round"
+      />
+      {/* Base del carrito */}
+      <path
+        d="M25 50L21 65H59L55 50"
+        stroke="#FF6B35"
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      {/* Ruedas */}
+      <circle cx="30" cy="70" r="4" fill="#FF6B35" />
+      <circle cx="50" cy="70" r="4" fill="#FF6B35" />
+      {/* Asa del carrito */}
+      <path
+        d="M30 25C30 18 35 15 40 15C45 15 50 18 50 25"
+        stroke="#4A90E2"
+        strokeWidth="4"
+        strokeLinecap="round"
       />
     </svg>
   );
 }
 
+// =============================================================================
+// COMPONENTE WELCOME VIEW
+// =============================================================================
+
 interface WelcomeViewProps {
-  startButtonText: string;
+  startButtonText?: string;
   onStartCall: () => void;
+  disabled?: boolean;
+  error?: string;
 }
 
-export const WelcomeView = ({
-  startButtonText,
+export const WelcomeView: React.FC<WelcomeViewProps> = ({
+  startButtonText = '🎤 Hablar con Marielena',
   onStartCall,
-  ref,
-}: React.ComponentProps<'div'> & WelcomeViewProps) => {
+  disabled = false,
+  error,
+}) => {
   return (
-    <div ref={ref}>
-      <section className="bg-background flex flex-col items-center justify-center text-center">
-        <WelcomeImage />
+    <div className="min-h-screen w-full flex items-center justify-center p-4 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+      <section
+        className="
+          bg-gray-800/90 backdrop-blur-sm
+          p-8 md:p-12 
+          rounded-3xl 
+          shadow-2xl shadow-orange-500/20
+          flex flex-col items-center justify-center text-center 
+          max-w-lg w-full
+          border border-gray-700/50
+          transition-all duration-300 hover:shadow-orange-500/30
+        "
+      >
+        {/* Icono */}
+        <QuickBasketIcon />
 
-        <p className="text-foreground max-w-prose pt-1 leading-6 font-medium">
-          Chat live with your voice AI agent
+        {/* Título Principal */}
+        <h1 className="text-4xl sm:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-orange-600 mb-2">
+          Forum Supermayoristas
+        </h1>
+
+        {/* Subtítulo */}
+        <h2 className="text-xl sm:text-2xl font-semibold text-gray-300 mb-2">
+          Tu Asistente de Compras IA
+        </h2>
+
+        {/* Badge de Marielena */}
+        <div className="inline-flex items-center gap-2 px-4 py-2 bg-orange-500/10 border border-orange-500/30 rounded-full mb-6">
+          <span className="text-2xl">🇻🇪</span>
+          <span className="text-sm font-medium text-orange-300">Impulsado por Marielena</span>
+        </div>
+
+        {/* Descripción */}
+        <p className="text-gray-400 max-w-prose leading-relaxed text-base mb-8 px-4">
+          Marielena, tu compañera de compras experta, te ayudará a armar tu lista usando solo tu voz. 
+          Dile lo que necesitas y ella lo agregará a tu carrito en tiempo real.
         </p>
 
-        <Button variant="primary" size="lg" onClick={onStartCall} className="mt-6 w-64 font-mono">
-          {startButtonText}
+        {/* Características destacadas */}
+        <div className="grid grid-cols-2 gap-3 w-full mb-8 text-sm">
+          <div className="flex items-center gap-2 text-gray-400">
+            <span className="text-orange-400">🥘</span>
+            <span>Recetas Criollas</span>
+          </div>
+          <div className="flex items-center gap-2 text-gray-400">
+            <span className="text-orange-400">🚀</span>
+            <span>Delivery Rápido</span>
+          </div>
+          <div className="flex items-center gap-2 text-gray-400">
+            <span className="text-orange-400">🎤</span>
+            <span>Pide por Voz</span>
+          </div>
+          <div className="flex items-center gap-2 text-gray-400">
+            <span className="text-orange-400">💲</span>
+            <span>Precios de Mayor</span>
+          </div>
+        </div>
+
+        {/* Error Message */}
+        {error && (
+          <div className="w-full mb-4 p-4 bg-red-900/40 border border-red-700/50 rounded-xl">
+            <p className="text-sm text-red-300 flex items-center gap-2">
+              <span className="text-lg">⚠️</span>
+              {error}
+            </p>
+          </div>
+        )}
+
+        {/* Botón Principal */}
+        <Button
+          variant="primary"
+          size="lg"
+          onClick={onStartCall}
+          disabled={disabled}
+          className={cn(
+            'w-full max-w-xs transition-transform duration-200 ease-out font-semibold',
+            disabled ? 'opacity-70 cursor-not-allowed' : 'hover:scale-[1.03] active:scale-[0.98]'
+          )}
+        >
+          {disabled ? (
+            <span className="flex items-center gap-2">
+              <span className="animate-spin">⏳</span>
+              Conectando...
+            </span>
+          ) : (
+            startButtonText
+          )}
         </Button>
-      </section>
 
-      <div className="fixed bottom-5 left-0 flex w-full items-center justify-center">
-        <p className="text-muted-foreground max-w-prose pt-1 text-xs leading-5 font-normal text-pretty md:text-sm">
-          Need help getting set up? Check out the{' '}
-          <a
-            target="_blank"
-            rel="noopener noreferrer"
-            href="https://docs.livekit.io/agents/start/voice-ai/"
-            className="underline"
-          >
-            Voice AI quickstart
-          </a>
-          .
-        </p>
-      </div>
+        {/* Footer Info */}
+        <div className="mt-8 pt-6 w-full border-t border-gray-700/50">
+          <div className="flex items-center justify-center gap-2 mb-2">
+            <span className="relative flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+            </span>
+            <span className="text-sm text-gray-400 font-medium">Agente listo para conectar</span>
+          </div>
+          <p className="text-xs text-gray-500">
+            Powered by{' '}
+            <span className="text-orange-400 font-semibold">LiveKit</span>
+            {' '}&{' '}
+            <span className="text-orange-400 font-semibold">Murf AI</span>
+          </p>
+        </div>
+      </section>
     </div>
   );
 };
+
+export default WelcomeView;
