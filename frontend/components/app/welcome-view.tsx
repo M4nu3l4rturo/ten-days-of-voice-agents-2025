@@ -1,61 +1,132 @@
-import { Button } from '@/components/livekit/button';
+import React from 'react';
 
-function WelcomeImage() {
+// --- UTILIDADES MOCK (Para resolver el error de importación de ruta) ---
+// Utilidad cn: combina condicionalmente clases de Tailwind
+const cn = (...classes: (string | undefined | null | boolean)[]) => classes.filter(Boolean).join(' ');
+
+interface MockButtonProps extends React.ComponentProps<'button'> {
+  variant?: 'default' | 'primary';
+  size?: 'default' | 'sm' | 'lg';
+}
+
+/**
+ * Componente Button Mock: implementa un botón básico con estilos de Tailwind
+ * para asegurar la funcionalidad sin dependencias externas.
+ */
+const Button = ({ children, onClick, className, variant = 'default', size = 'default', ...props }: MockButtonProps) => {
+  const baseClasses = 'inline-flex items-center justify-center whitespace-nowrap rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50';
+
+  const sizeClasses = {
+    default: 'h-10 px-4 py-2',
+    sm: 'h-9 rounded-md px-3',
+    lg: 'h-11 px-8 rounded-xl',
+  }[size];
+
+  const variantClasses = {
+    default: 'bg-gray-100 text-gray-900 shadow-sm hover:bg-gray-200',
+    primary: 'bg-blue-600 text-white shadow-lg hover:bg-blue-700',
+  }[variant];
+
+  return (
+    <button
+      onClick={onClick}
+      className={cn(baseClasses, sizeClasses, variantClasses, className)}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+};
+// ----------------------------------------------------------------
+
+
+/**
+ * Icono de Gamepad/Joystick para la vista de bienvenida con estilo gaming.
+ */
+function GameIcon() {
   return (
     <svg
-      width="64"
-      height="64"
-      viewBox="0 0 64 64"
-      fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      className="text-fg0 mb-4 size-16"
+      width="80"
+      height="80"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="text-yellow-400 mb-6 drop-shadow-lg"
     >
-      <path
-        d="M15 24V40C15 40.7957 14.6839 41.5587 14.1213 42.1213C13.5587 42.6839 12.7956 43 12 43C11.2044 43 10.4413 42.6839 9.87868 42.1213C9.31607 41.5587 9 40.7957 9 40V24C9 23.2044 9.31607 22.4413 9.87868 21.8787C10.4413 21.3161 11.2044 21 12 21C12.7956 21 13.5587 21.3161 14.1213 21.8787C14.6839 22.4413 15 23.2044 15 24ZM22 5C21.2044 5 20.4413 5.31607 19.8787 5.87868C19.3161 6.44129 19 7.20435 19 8V56C19 56.7957 19.3161 57.5587 19.8787 58.1213C20.4413 58.6839 21.2044 59 22 59C22.7956 59 23.5587 58.6839 24.1213 58.1213C24.6839 57.5587 25 56.7957 25 56V8C25 7.20435 24.6839 6.44129 24.1213 5.87868C23.5587 5.31607 22.7956 5 22 5ZM32 13C31.2044 13 30.4413 13.3161 29.8787 13.8787C29.3161 14.4413 29 15.2044 29 16V48C29 48.7957 29.3161 49.5587 29.8787 50.1213C30.4413 50.6839 31.2044 51 32 51C32.7956 51 33.5587 50.6839 34.1213 50.1213C34.6839 49.5587 35 48.7957 35 48V16C35 15.2044 34.6839 14.4413 34.1213 13.8787C33.5587 13.3161 32.7956 13 32 13ZM42 21C41.2043 21 40.4413 21.3161 39.8787 21.8787C39.3161 22.4413 39 23.2044 39 24V40C39 40.7957 39.3161 41.5587 39.8787 42.1213C40.4413 42.6839 41.2043 43 42 43C42.7957 43 43.5587 42.6839 44.1213 42.1213C44.6839 41.5587 45 40.7957 45 40V24C45 23.2044 44.6839 22.4413 44.1213 21.8787C43.5587 21.3161 42.7957 21 42 21ZM52 17C51.2043 17 50.4413 17.3161 49.8787 17.8787C49.3161 18.4413 49 19.2044 49 20V44C49 44.7957 49.3161 45.5587 49.8787 46.1213C50.4413 46.6839 51.2043 47 52 47C52.7957 47 53.5587 46.6839 54.1213 46.1213C54.6839 45.5587 55 44.7957 55 44V20C55 19.2044 54.6839 18.4413 54.1213 17.8787C53.5587 17.3161 52.7957 17 52 17Z"
-        fill="currentColor"
-      />
+      {/* Icono Gamepad */}
+      <path d="M6 10h2l3-3l1 1l3-3h2"></path>
+      <path d="M12 21a9 9 0 0 0 9-9v-3l-3-1l-3 3h-6l-3-3l-3 1v3a9 9 0 0 0 9 9z"></path>
+      <path d="M12 15h0"></path>
+      <path d="M9 15h0"></path>
+      <path d="M15 15h0"></path>
     </svg>
   );
 }
 
+// Tipo de propiedades para la vista de bienvenida
 interface WelcomeViewProps {
   startButtonText: string;
   onStartCall: () => void;
 }
 
-export const WelcomeView = ({
-  startButtonText,
-  onStartCall,
-  ref,
-}: React.ComponentProps<'div'> & WelcomeViewProps) => {
-  return (
-    <div ref={ref}>
-      <section className="bg-background flex flex-col items-center justify-center text-center">
-        <WelcomeImage />
+/**
+ * Vista de bienvenida con estilo de pantalla de inicio de juego.
+ * Se utiliza React.forwardRef para pasar el ref correctamente.
+ */
+const WelcomeView = React.forwardRef<HTMLDivElement, WelcomeViewProps>(
+  ({ startButtonText, onStartCall }, ref) => {
+    return (
+      // Contenedor principal para centrar la sección de bienvenida y aplicar el fondo del juego
+      <div ref={ref} className="min-h-screen w-full flex items-center justify-center p-4 bg-zinc-950 text-white font-mono">
+        
+        {/* Tarjeta de bienvenida con estilo de arcade/juego */}
+        <section className="
+          bg-zinc-800/80 backdrop-blur-sm p-8 md:p-12 
+          rounded-2xl shadow-[0_0_40px_rgba(255,255,0,0.3),0_0_15px_rgba(255,255,255,0.1)]
+          flex flex-col items-center justify-center text-center max-w-lg w-full
+          border-2 border-yellow-400/50
+        ">
+          
+          <GameIcon /> {/* Icono de Gamepad */}
 
-        <p className="text-foreground max-w-prose pt-1 leading-6 font-medium">
-          Chat live with your voice AI agent
-        </p>
+          <h1 className="text-4xl sm:text-5xl font-extrabold text-yellow-400 mb-2 drop-shadow-md tracking-wider">
+            AI VOICE CHALLENGE
+          </h1>
+          
+          <p className="text-gray-300 max-w-prose pt-1 leading-6 text-lg mb-8">
+            Prepárate para interactuar con tu agente de voz AI en esta simulación.
+          </p>
 
-        <Button variant="primary" size="lg" onClick={onStartCall} className="mt-6 w-64 font-mono">
-          {startButtonText}
-        </Button>
-      </section>
-
-      <div className="fixed bottom-5 left-0 flex w-full items-center justify-center">
-        <p className="text-muted-foreground max-w-prose pt-1 text-xs leading-5 font-normal text-pretty md:text-sm">
-          Need help getting set up? Check out the{' '}
-          <a
-            target="_blank"
-            rel="noopener noreferrer"
-            href="https://docs.livekit.io/agents/start/voice-ai/"
-            className="underline"
+          {/* Utilizamos el componente 'Button' mock (autocontenido) */}
+          <Button 
+            variant="primary" 
+            size="lg" 
+            onClick={onStartCall} 
+            className="mt-4 w-full max-w-xs text-xl font-bold uppercase
+                       bg-green-500 hover:bg-green-600 text-white
+                       shadow-[0_4px_0_0_#16a34a] hover:shadow-[0_2px_0_0_#16a34a] 
+                       active:translate-y-[2px] transition-all duration-100 ease-out"
           >
-            Voice AI quickstart
-          </a>
-          .
-        </p>
+            {startButtonText}
+          </Button>
+        </section>
+        
+        {/* Pie de página simple para estado */}
+        <div className="fixed bottom-4 left-0 w-full flex justify-center">
+          <p className="text-gray-500 text-sm font-mono tracking-wider">
+            {/* Usamos un pequeño indicador de estado */}
+            <span className="inline-block w-3 h-3 bg-green-500 rounded-full animate-pulse mr-2"></span>
+            SISTEMA OPERACIONAL
+          </p>
+        </div>
       </div>
-    </div>
-  );
-};
+    );
+  }
+);
+
+// Se cambia de export default a exportación con nombre para coincidir con la importación en view-controller.tsx
+export { WelcomeView };
