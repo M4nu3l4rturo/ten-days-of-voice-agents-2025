@@ -1,27 +1,27 @@
-# food_agent_sqlite.py
 """
-Day 7 – Food & Grocery Ordering Voice Agent (SQLite) - Venezuelan Food
-- Uses SQLite DB 'order_db.sqlite'
-- Seeds Venezuela Catalog (Harina Pan, Queso, Arroz, etc.)
-- Tools:
-    - find_item (search catalog)
-    - add_to_cart / remove_from_cart / update_cart / show_cart
-    - add_recipe (ingredients for Hallacas, Pabellón, etc.)
-    - place_order (Trigger auto-status update simulation)
-    - cancel_order (New Feature)
-    - get_order_status / order_history
-- Auto-simulation: Status updates every 5 seconds in background.
+Day 10 – Voice Improv Battle Host
+
+This file implements the required single-player voice agent called "Improv Battle".
+The agent acts as a high-energy TV show host, guides the player through improv
+scenarios, provides varied feedback, and manages the game state.
+
+Behaviour summary (implemented as tools exposed to the LLM):
+- start_show(name, max_rounds): Initialize session state and introduce the show.
+- next_scenario(): Advance to the next improv scenario and set the phase to awaiting_improv.
+- record_performance(performance): Save the player's improvisation, produce a host reaction, and advance the game state.
+- summarize_show(): Produce a closing summary once rounds are complete.
+- stop_show(confirm=False): Allow graceful early exit.
 """
 
 import json
 import logging
 import os
-import sqlite3
-import uuid
 import asyncio
+import uuid
+import random
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Optional, Annotated
+from typing import List, Dict, Optional, Annotated
 
 from dotenv import load_dotenv
 from pydantic import Field
@@ -40,8 +40,10 @@ from livekit.agents import (
 from livekit.plugins import murf, silero, google, deepgram, noise_cancellation
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
+# -------------------------
 # Logging
-logger = logging.getLogger("food_agent_sqlite")
+# -------------------------
+logger = logging.getLogger("voice_improv_battle")
 logger.setLevel(logging.INFO)
 handler = logging.StreamHandler()
 handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
@@ -49,633 +51,278 @@ logger.addHandler(handler)
 
 load_dotenv(".env.local")
 
-# DB config & seeding
-DB_FILE = "order_db.sqlite"
+# -------------------------
+# Improv Scenarios (Seeded List)
+# -------------------------
+SCENARIOS = [
+    "You are a barista who has to tell a customer that their latte is actually a portal to another dimension.",
+    "You are a time-travelling tour guide explaining modern smartphones to someone from the 1800s.",
+    "You are a restaurant waiter who must calmly tell a customer that their order has escaped the kitchen.",
+    "You are a customer trying to return an obviously cursed object to a very skeptical shop owner.",
+    "You are an overenthusiastic TV infomercial host selling a product that clearly does not work as advertised.",
+    "You are an astronaut who just discovered the ship's coffee machine has developed a personality.",
+    "You are a nervous wedding officiant who keeps getting the couple's names mixed up in ridiculous ways.",
+    "You are a ghost trying to give a performance review to a living employee.",
+    "You are a medieval king reacting to a very modern delivery service showing up at court.",
+    "You are a detective interrogating a suspect who only answers in awkward metaphors."
+]
 
-# Símbolo de moneda constante para fácil cambio si es necesario
-CURRENCY_SYMBOL = "$" 
-
-
-def get_db_path() -> str:
-    """Return absolute path for the DB file. If __file__ is not defined (interactive), fall back to cwd."""
-    try:
-        base = os.path.abspath(os.path.dirname(__file__))
-    except NameError:
-        base = os.getcwd()
-    # ensure directory exists
-    if not os.path.isdir(base):
-        os.makedirs(base, exist_ok=True)
-    return os.path.join(base, DB_FILE)
-
-
-def get_conn():
-    path = get_db_path()
-    # check_same_thread=False required for async background tasks accessing DB
-    conn = sqlite3.connect(path, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON;")
-    return conn
-
-
-def seed_database():
-    """Create tables and seed the Venezuelan catalog if empty."""
-    try:
-        conn = get_conn()
-        cur = conn.cursor()
-
-        # Create catalog table
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS catalog (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                category TEXT,
-                price REAL NOT NULL,
-                brand TEXT,
-                size TEXT,
-                units TEXT,
-                tags TEXT -- JSON encoded list
-            )
-        """)
-
-        # Orders table
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS orders (
-                order_id TEXT PRIMARY KEY,
-                timestamp TEXT,
-                total REAL,
-                customer_name TEXT,
-                address TEXT,
-                status TEXT DEFAULT 'received',
-                created_at TEXT DEFAULT (datetime('now')),
-                updated_at TEXT DEFAULT (datetime('now'))
-            )
-        """)
-
-        # Order items
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS order_items (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                order_id TEXT,
-                item_id TEXT,
-                name TEXT,
-                unit_price REAL,
-                quantity INTEGER,
-                notes TEXT,
-                FOREIGN KEY(order_id) REFERENCES orders(order_id) ON DELETE CASCADE
-            )
-        """)
-
-        # Check if catalog empty
-        cur.execute("SELECT COUNT(1) FROM catalog")
-        if cur.fetchone()[0] == 0:
-            catalog = [
-                # Básicos Venezolanos
-                ("harina-de-maiz-pan-1kg", "Harina de Maíz PAN", "Básicos", 1.80, "PAN", "1kg", "paquete", json.dumps(["harina", "arepas", "hallacas"])),
-                ("arroz-blanco-1kg", "Arroz Granulado Tipo 1", "Básicos", 1.50, "Mary", "1kg", "paquete", json.dumps(["arroz", "pabellon"])),
-                ("azucar-1kg", "Azúcar Refinada", "Básicos", 1.20, "Montalban", "1kg", "paquete", json.dumps(["dulce", "basico"])),
-                ("sal-1kg", "Sal Marina", "Básicos", 0.80, "Refisal", "1kg", "paquete", json.dumps(["basico", "condimento"])),
-                ("aceite-vegetal-1l", "Aceite Comestible", "Básicos", 3.50, "Vatel", "1L", "botella", json.dumps(["cocina", "fritura"])),
-                
-                # Lácteos y Similares
-                ("leche-completa-1l", "Leche Completa", "Lácteos", 2.10, "Lácteos Los Andes", "1L", "cartón", json.dumps(["lacteo", "basico"])),
-                ("queso-blanco-rallado-500g", "Queso Blanco Rallado", "Lácteos", 6.50, "Santa Bárbara", "500g", "paquete", json.dumps(["queso", "arepas", "basico"])),
-                ("mantequilla-250g", "Margarina con Sal", "Lácteos", 2.50, "Mavesa", "250g", "barra", json.dumps(["lacteo"])),
-                
-                # Carnes (Simuladas - Precios por 500g o unidad)
-                ("carne-de-res-500g", "Carne de Res de Primera", "Carnes", 8.00, "", "500g", "bandeja", json.dumps(["carne", "hallacas"])),
-                ("pernil-de-cerdo-500g", "Pernil de Cerdo Fresco", "Carnes", 6.50, "", "500g", "bandeja", json.dumps(["carne", "hallacas"])),
-                ("gallina-entera", "Gallina Criolla Entera", "Carnes", 12.00, "", "1.5kg", "unidad", json.dumps(["carne", "hallacas"])),
-                ("carne-mechada-500g", "Carne para Pabellón", "Carnes", 7.50, "", "500g", "bandeja", json.dumps(["carne", "pabellon"])),
-                ("redondo-de-res-1kg", "Redondo de Res para Asado", "Carnes", 15.00, "", "1kg", "pieza", json.dumps(["carne", "asado-negro"])),
-                
-                # Condimentos y Extras
-                ("aceite-onotado", "Aceite Onotado", "Condimentos", 4.50, "El Gran Chef", "250ml", "frasco", json.dumps(["hallacas", "color"])),
-                ("hojas-de-platano-paquete", "Hojas de Plátano", "Extras", 3.00, "Frescas", "20unid", "paquete", json.dumps(["hallacas"])),
-                ("pasas-250g", "Pasas Morenas", "Condimentos", 2.00, "La Venezolana", "250g", "paquete", json.dumps(["hallacas", "dulce"])),
-                ("aceitunas-rellenas-frasco", "Aceitunas Rellenas", "Condimentos", 4.00, "Serpis", "300g", "frasco", json.dumps(["hallacas"])),
-                ("papelon-panela", "Papelón en Panela", "Básicos", 1.50, "El Campesino", "500g", "panela", json.dumps(["dulce", "asado-negro"])),
-                ("vegetales-para-sofrito", "Vegetales para Sofrito (Mixto)", "Vegetales", 5.00, "Forum", "500g", "bolsa", json.dumps(["sofrito", "hallacas", "asado-negro"])),
-                ("vino-tinto-seco-375ml", "Vino Tinto Seco", "Licores", 7.00, "Santa Elena", "375ml", "botella", json.dumps(["cocina", "asado-negro"])),
-                ("platano-maduro-unidad", "Plátano Maduro", "Vegetales", 0.75, "", "unidad", "unidad", json.dumps(["pabellon", "fruta"])),
-            ]
-            cur.executemany("""
-                INSERT INTO catalog (id, name, category, price, brand, size, units, tags)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, catalog)
-            conn.commit()
-            logger.info(f"✅ Seeded Venezuelan catalog into {get_db_path()}")
-
-        conn.close()
-    except Exception as e:
-        logger.exception("Failed to seed database: %s", e)
-
-
-# Seed DB on import/run (safe to call multiple times)
-seed_database()
-
-# In-memory per-session cart
-@dataclass
-class CartItem:
-    item_id: str
-    name: str
-    unit_price: float
-    quantity: int = 1
-    notes: str = ""
-
+# -------------------------
+# Per-session Improv State (as required)
+# -------------------------
 @dataclass
 class Userdata:
-    cart: List[CartItem] = field(default_factory=list)
-    customer_name: Optional[str] = None
+    player_name: Optional[str] = None
+    session_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
+    started_at: str = field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
+    improv_state: Dict = field(default_factory=lambda: {
+        "current_round": 0,
+        "max_rounds": 3,
+        "rounds": [],  # each: {"scenario": str, "performance": str, "reaction": str}
+        "phase": "idle",  # "intro" | "awaiting_improv" | "reacting" | "done" | "idle"
+        "used_indices": []
+    })
+    history: List[Dict] = field(default_factory=list)
 
-# DB Helpers
+# -------------------------
+# Helpers for Game Logic
+# -------------------------
 
-def find_catalog_item_by_id_db(item_id: str) -> Optional[dict]:
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM catalog WHERE LOWER(id) = LOWER(?) LIMIT 1", (item_id,))
-    row = cur.fetchone()
-    conn.close()
-    if not row:
-        return None
-    record = dict(row)
-    try:
-        record["tags"] = json.loads(record.get("tags") or "[]")
-    except Exception:
-        record["tags"] = []
-    return record
-
-
-def search_catalog_by_name_db(query: str) -> List[dict]:
-    q = f"%{query.lower()}%"
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT * FROM catalog
-        WHERE LOWER(name) LIKE ? OR LOWER(tags) LIKE ?
-        LIMIT 50
-    """, (q, q))
-    rows = cur.fetchall()
-    conn.close()
-    results = []
-    for r in rows:
-        rec = dict(r)
-        try:
-            rec["tags"] = json.loads(rec.get("tags") or "[]")
-        except Exception:
-            rec["tags"] = []
-        results.append(rec)
-    return results
+def _pick_scenario(userdata: Userdata) -> str:
+    """Picks a scenario that hasn't been used yet, or resets the list."""
+    used = userdata.improv_state.get("used_indices", [])
+    candidates = [i for i in range(len(SCENARIOS)) if i not in used]
+    if not candidates:
+        # Reset if we exhausted scenarios (ensures game can run long)
+        userdata.improv_state["used_indices"] = []
+        candidates = list(range(len(SCENARIOS)))
+    
+    idx = random.choice(candidates)
+    userdata.improv_state["used_indices"].append(idx)
+    return SCENARIOS[idx]
 
 
-def insert_order_db(order_id: str, timestamp: str, total: float, customer_name: str, address: str, status: str, items: List[CartItem]):
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO orders (order_id, timestamp, total, customer_name, address, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-    """, (order_id, timestamp, total, customer_name, address, status))
-    for ci in items:
-        cur.execute("""
-            INSERT INTO order_items (order_id, item_id, name, unit_price, quantity, notes)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (order_id, ci.item_id, ci.name, ci.unit_price, ci.quantity, ci.notes))
-    conn.commit()
-    conn.close()
+def _host_reaction_text(performance: str) -> str:
+    """Generates a varied host reaction (supportive, neutral, or mildly critical)."""
+    # Tones required: supportive, neutral, mildly critical (non-abusive)
+    tones = ["supportive", "neutral", "mildly_critical"]
+    tone = random.choice(tones)
+    
+    # Quick keyword detection to pick specific highlights
+    highlights = []
+    if any(w in performance.lower() for w in ("laugh", "funny", "haha", "joke")):
+        highlights.append("great comedic timing")
+    if any(w in performance.lower() for w in ("sad", "cry", "tears", "emotion")):
+        highlights.append("good emotional depth")
+    if any(w in performance.lower() for w in ("pause", "silence", "...", "wait")):
+        highlights.append("interesting use of silence or pacing")
+    if not highlights:
+        highlights.append(random.choice(["nice character choices", "bold commitment", "unexpected twist"]))
 
+    chosen = random.choice(highlights)
+    
+    # Generate varied feedback based on tone
+    if tone == "supportive":
+        return f"FANTASTIC! Love that — {chosen}! That was playful and clear. Nice work, {tone.upper()} feedback today! Ready for the next one?"
+    elif tone == "neutral":
+        return f"Hmm — {chosen}. That landed in parts; you had interesting ideas. Let's try the next scene and lean into one strong choice."
+    else:  # mildly_critical
+        return f"Okay — {chosen}, but that felt a bit rushed. Try to make stronger, clearer choices next time. Don't be afraid to exaggerate, Contesant!"
 
-def get_order_db(order_id: str) -> Optional[dict]:
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM orders WHERE order_id = ? LIMIT 1", (order_id,))
-    o = cur.fetchone()
-    if not o:
-        conn.close()
-        return None
-    order = dict(o)
-    cur.execute("SELECT * FROM order_items WHERE order_id = ?", (order_id,))
-    items = [dict(r) for r in cur.fetchall()]
-    conn.close()
-    order["items"] = items
-    return order
-
-
-def list_orders_db(limit: int = 10, customer_name: Optional[str] = None) -> List[dict]:
-    conn = get_conn()
-    cur = conn.cursor()
-    if customer_name:
-        cur.execute("SELECT * FROM orders WHERE LOWER(customer_name) = LOWER(?) ORDER BY created_at DESC LIMIT ?", (customer_name, limit))
+# -------------------------
+# Agent Tools (Functions)
+# -------------------------
+@function_tool
+async def start_show(
+    ctx: RunContext[Userdata],
+    name: Annotated[Optional[str], Field(description="Player/contestant name (optional)", default=None)] = None,
+    max_rounds: Annotated[int, Field(description="Number of rounds (3-5 recommended)", default=3)] = 3,
+) -> str:
+    """Initializes and introduces the Improv Battle show, and presents the first scenario."""
+    userdata = ctx.userdata
+    if name:
+        userdata.player_name = name.strip()
     else:
-        cur.execute("SELECT * FROM orders ORDER BY created_at DESC LIMIT ?", (limit,))
-    rows = [dict(r) for r in cur.fetchall()]
-    conn.close()
-    return rows
+        # Use existing name or fallback
+        userdata.player_name = userdata.player_name or "Contestant"
+
+    # Clamp rounds for safe play (1-8)
+    max_rounds = max(1, min(8, max_rounds))
+
+    # Reset state
+    userdata.improv_state["max_rounds"] = int(max_rounds)
+    userdata.improv_state["current_round"] = 0
+    userdata.improv_state["rounds"] = []
+    userdata.improv_state["phase"] = "intro"
+    userdata.improv_state["used_indices"] = [] # Reset scenario use
+
+    userdata.history.append({"time": datetime.utcnow().isoformat() + "Z", "action": "start_show", "name": userdata.player_name})
+
+    intro = (
+        f"WELCOME TO IMPROV BATTLE! I'm your high-energy host, and we're ready to play."
+        f" {userdata.player_name}, we'll be running {userdata.improv_state['max_rounds']} rounds today! "
+        "Rules are simple: I'll give you a scene, you act it out, and when you're done say 'End scene' or pause. I'll react, and we move on! Ready to go?!"
+    )
+    
+    # After intro, immediately provide first scenario for flow
+    scenario = _pick_scenario(userdata)
+    userdata.improv_state["current_round"] = 1
+    userdata.improv_state["phase"] = "awaiting_improv"
+    userdata.history.append({"time": datetime.utcnow().isoformat() + "Z", "action": "present_scenario", "round": 1, "scenario": scenario})
+
+    return intro + "\n\n**ROUND 1:** " + scenario + "\n\nStart improvising... NOW!"
 
 
-def update_order_status_db(order_id: str, new_status: str) -> bool:
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("UPDATE orders SET status = ?, updated_at = datetime('now') WHERE order_id = ?", (new_status, order_id))
-    changed = cur.rowcount
-    conn.commit()
-    conn.close()
-    return changed > 0
+@function_tool
+async def next_scenario(ctx: RunContext[Userdata]) -> str:
+    """Advances the game to the next scenario if not complete."""
+    userdata = ctx.userdata
+    if userdata.improv_state.get("phase") == "done":
+        return "The show is already over! Say 'start show' to play again."
 
-# LOGIC & ASYNC SIMULATION
+    cur = userdata.improv_state.get("current_round", 0)
+    maxr = userdata.improv_state.get("max_rounds", 3)
+    
+    # Check for summary condition
+    if cur >= maxr:
+        userdata.improv_state["phase"] = "done"
+        return await summarize_show(ctx)
 
-RECIPE_MAP = {
-    "hallacas": [
-        "harina-de-maiz-pan-1kg",
-        "carne-de-res-500g", 
-        "pernil-de-cerdo-500g",
-        "gallina-entera",
-        "aceite-onotado",
-        "hojas-de-platano-paquete",
-        "pasas-250g",
-        "aceitunas-rellenas-frasco",
-    ],
-    "arepas fritas": [
-        "harina-de-maiz-pan-1kg", 
-        "queso-blanco-rallado-500g", 
-        "aceite-vegetal-1l"
-    ],
-    "pabellon criollo": [
-        "arroz-blanco-1kg", 
-        "caraotas-negras-1kg", 
-        "carne-mechada-500g", 
-        "platano-maduro-unidad"
-    ],
-    "asado negro": [
-        "redondo-de-res-1kg", 
-        "papelon-panela", 
-        "vegetales-para-sofrito",
-        "vino-tinto-seco-375ml"
-    ],
-}
-
-# Intelligent ingredient inference helpers
-import re
-
-_NUMBER_WORDS = {
-    'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
-    'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10
-}
-
-def _parse_servings_from_text(text: str) -> int:
-    """Try to extract servings/quantity from informal text like 'for two people' or 'for 3'. Default 1."""
-    text = (text or "").lower()
-    m = re.search(r"for\s+(\d+)\s*(?:people|person|servings)?", text)
-    if m:
-        try:
-            return max(1, int(m.group(1)))
-        except Exception:
-            pass
-    for word, num in _NUMBER_WORDS.items():
-        if f"for {word}" in text:
-            return num
-    return 1
+    # Advance round
+    next_round = cur + 1
+    scenario = _pick_scenario(userdata)
+    userdata.improv_state["current_round"] = next_round
+    userdata.improv_state["phase"] = "awaiting_improv"
+    userdata.history.append({"time": datetime.utcnow().isoformat() + "Z", "action": "present_scenario", "round": next_round, "scenario": scenario})
+    
+    return f"**ROUND {next_round}**: {scenario}\n\nHit me with your best shot!"
 
 
-def _infer_items_from_tags(query: str, max_results: int = 6) -> List[str]:
-    """Try to infer catalog items by matching query words to tags in the catalog. Returns list of item_ids."""
-    words = re.findall(r"\w+", (query or "").lower())
-    found = []
-    conn = get_conn()
-    cur = conn.cursor()
-    for w in words:
-        if len(found) >= max_results:
+@function_tool
+async def record_performance(
+    ctx: RunContext[Userdata],
+    performance: Annotated[str, Field(description="Player's improv performance (transcribed text)")],
+) -> str:
+    """Records the player's performance, generates a host reaction, and prepares for the next round or closure."""
+    userdata = ctx.userdata
+    
+    # Check if we are in the correct phase, but proceed anyway to capture user input
+    if userdata.improv_state.get("phase") not in ["awaiting_improv", "reacting"]:
+        userdata.history.append({"time": datetime.utcnow().isoformat() + "Z", "action": "record_performance_out_of_phase"})
+
+    round_no = userdata.improv_state.get("current_round", 0)
+    
+    # Try to find the scenario from the history for logging
+    scenario = "(Unknown Scenario)"
+    for item in reversed(userdata.history):
+        if item.get("action") == "present_scenario" and item.get("round") == round_no:
+            scenario = item.get("scenario")
             break
-        q = f"%\"{w}\"%"
-        cur.execute("SELECT * FROM catalog WHERE LOWER(tags) LIKE ? OR LOWER(name) LIKE ? LIMIT 10", (q, f"%{w}%"))
-        rows = cur.fetchall()
-        for r in rows:
-            rid = r["id"]
-            if rid not in found:
-                found.append(rid)
-                if len(found) >= max_results:
-                    break
-    conn.close()
-    return found
 
-STATUS_FLOW = ["received", "confirmed", "shipped", "out_for_delivery", "delivered"]
+    reaction = _host_reaction_text(performance) # Use our helper for varied tone
 
+    # Store round data
+    userdata.improv_state["rounds"].append({
+        "round": round_no,
+        "scenario": scenario,
+        "performance": performance,
+        "reaction": reaction, # Store the reaction text
+    })
+    userdata.improv_state["phase"] = "reacting"
+    userdata.history.append({"time": datetime.utcnow().isoformat() + "Z", "action": "record_performance", "round": round_no})
 
-async def simulate_delivery_flow(order_id: str):
-    """
-    Background task: automatically advances order status every 5 seconds.
-    Flow: received -> confirmed -> shipped -> out_for_delivery -> delivered
-    """
-    logger.info(f"🔄 [Simulation] Started tracking simulation for {order_id}")
+    # Check for max rounds
+    if round_no >= userdata.improv_state.get("max_rounds", 3):
+        userdata.improv_state["phase"] = "done"
+        closing = "\n" + reaction + "\n\nThat's the final round! "
+        closing += (await summarize_show(ctx))
+        return closing
 
-    # initial wait
-    await asyncio.sleep(5)
-
-    # Loop through statuses starting from index 1 (confirmed)
-    for next_status in STATUS_FLOW[1:]:
-        # Check if order was cancelled in the meantime
-        curr_order = get_order_db(order_id)
-        if curr_order and curr_order.get("status") == "cancelled":
-            logger.info(f"🛑 [Simulation] Order {order_id} was cancelled. Stopping simulation.")
-            return
-
-        update_order_status_db(order_id, next_status)
-        logger.info(f"🚚 [Simulation] Order {order_id} updated to '{next_status}'")
-        await asyncio.sleep(5)
-
-    logger.info(f"✅ [Simulation] Order {order_id} simulation complete (Delivered).")
-
-
-def cart_total(cart: List[CartItem]) -> float:
-    return round(sum(ci.unit_price * ci.quantity for ci in cart), 2)
-
-# Agent Tools
-@function_tool
-async def find_item(
-    ctx: RunContext[Userdata],
-    query: Annotated[str, Field(description="Name or partial name of item (e.g., 'leche', 'queso')")],
-) -> str:
-    matches = search_catalog_by_name_db(query)
-    if not matches:
-        return f"No items found matching '{query}'. Try generic names like 'leche' or 'arroz'."
-    lines = []
-    for it in matches[:10]:
-        lines.append(f"- {it['name']} (id: {it['id']}) — {CURRENCY_SYMBOL}{it['price']:.2f} — {it.get('size','')}")
-    return "Found:\n" + "\n".join(lines)
+    # Otherwise, prompt to move to the next round
+    closing = reaction + "\n\nReady for the next challenge? Just say 'Next Scenario' or 'Next Round'!"
+    return closing
 
 
 @function_tool
-async def add_to_cart(
-    ctx: RunContext[Userdata],
-    item_id: Annotated[str, Field(description="Catalog item id")],
-    quantity: Annotated[int, Field(description="Quantity", default=1)] = 1,
-    notes: Annotated[str, Field(description="Optional notes")] = "",
-) -> str:
-    item = find_catalog_item_by_id_db(item_id)
-    if not item:
-        return f"Item id '{item_id}' not found."
+async def summarize_show(ctx: RunContext[Userdata]) -> str:
+    """Produces the required closing summary of the player's performance style."""
+    userdata = ctx.userdata
+    rounds = userdata.improv_state.get("rounds", [])
+    if not rounds:
+        return "No complete rounds were played. Thanks for stopping by Improv Battle!"
 
-    for ci in ctx.userdata.cart:
-        if ci.item_id.lower() == item_id.lower():
-            ci.quantity += quantity
-            if notes:
-                ci.notes = notes
-            total = cart_total(ctx.userdata.cart)
-            # CAMBIO DE MONEDA: ₹ a $
-            return f"Updated '{ci.name}' quantity to {ci.quantity}. Cart total: {CURRENCY_SYMBOL}{total:.2f}"
+    # Aggregate simple metrics for the summary
+    mentions_character = sum(1 for r in rounds if any(w in (r.get('performance') or '').lower() for w in ('i am', "i'm", 'role', 'character')))
+    mentions_absurdity = sum(1 for r in rounds if any(w in (r.get('performance') or '').lower() for w in ('ridiculous', 'crazy', 'wtf', 'impossible')))
+    mentions_emotion = sum(1 for r in rounds if any(w in (r.get('performance') or '').lower() for w in ('sad', 'angry', 'happy', 'love', 'cry')))
 
-    ci = CartItem(item_id=item["id"], name=item["name"], unit_price=float(item["price"]), quantity=quantity, notes=notes)
-    ctx.userdata.cart.append(ci)
-    total = cart_total(ctx.userdata.cart)
-    # CAMBIO DE MONEDA: ₹ a $
-    return f"Added {quantity} x '{item['name']}' to cart. Cart total: {CURRENCY_SYMBOL}{total:.2f}"
-
-
-@function_tool
-async def remove_from_cart(
-    ctx: RunContext[Userdata],
-    item_id: Annotated[str, Field(description="Catalog item id to remove")],
-) -> str:
-    before = len(ctx.userdata.cart)
-    ctx.userdata.cart = [ci for ci in ctx.userdata.cart if ci.item_id.lower() != item_id.lower()]
-    after = len(ctx.userdata.cart)
-    if before == after:
-        return f"Item '{item_id}' was not in your cart."
-    total = cart_total(ctx.userdata.cart)
-    # CAMBIO DE MONEDA: ₹ a $
-    return f"Removed item '{item_id}' from cart. Cart total: {CURRENCY_SYMBOL}{total:.2f}"
-
-
-@function_tool
-async def update_cart_quantity(
-    ctx: RunContext[Userdata],
-    item_id: Annotated[str, Field(description="Catalog item id to update")],
-    quantity: Annotated[int, Field(description="New quantity")],
-) -> str:
-    if quantity < 1:
-        return await remove_from_cart(ctx, item_id)
-    for ci in ctx.userdata.cart:
-        if ci.item_id.lower() == item_id.lower():
-            ci.quantity = quantity
-            total = cart_total(ctx.userdata.cart)
-            # CAMBIO DE MONEDA: ₹ a $
-            return f"Updated '{ci.name}' quantity to {ci.quantity}. Cart total: {CURRENCY_SYMBOL}{total:.2f}"
-    return f"Item '{item_id}' not found in cart."
-
-
-@function_tool
-async def show_cart(ctx: RunContext[Userdata]) -> str:
-    if not ctx.userdata.cart:
-        return "Your cart is empty."
-    lines = []
-    for ci in ctx.userdata.cart:
-        # CAMBIO DE MONEDA: ₹ a $
-        lines.append(f"- {ci.quantity} x {ci.name} @ {CURRENCY_SYMBOL}{ci.unit_price:.2f} each = {CURRENCY_SYMBOL}{ci.unit_price * ci.quantity:.2f}")
-    total = cart_total(ctx.userdata.cart)
-    # CAMBIO DE MONEDA: ₹ a $
-    return "Your cart:\n" + "\n".join(lines) + f"\nTotal: {CURRENCY_SYMBOL}{total:.2f}"
-
-
-@function_tool
-async def add_recipe(
-    ctx: RunContext[Userdata],
-    dish_name: Annotated[str, Field(description="Name of dish, e.g. 'hallacas venezolanas', 'pabellon criollo'")],
-) -> str:
-    key = dish_name.strip().lower()
-    if key not in RECIPE_MAP:
-        # Actualizado para sugerir recetas venezolanas
-        available_dishes = ', '.join(f"'{d}'" for d in RECIPE_MAP.keys())
-        return f"Sorry, I don't have a recipe for '{dish_name}'. Try one of these: {available_dishes}."
-    added = []
-    for item_id in RECIPE_MAP[key]:
-        item = find_catalog_item_by_id_db(item_id)
-        if not item:
-            continue
-
-        found = False
-        for ci in ctx.userdata.cart:
-            if ci.item_id.lower() == item_id.lower():
-                ci.quantity += 1
-                found = True
-                break
-        if not found:
-            ctx.userdata.cart.append(CartItem(item_id=item["id"], name=item["name"], unit_price=float(item["price"]), quantity=1))
-        added.append(item["name"])
-
-    total = cart_total(ctx.userdata.cart)
-    # CAMBIO DE MONEDA: ₹ a $
-    return f"Added ingredients for '{dish_name}': {', '.join(added)}. Cart total: {CURRENCY_SYMBOL}{total:.2f}"
-
-
-@function_tool
-async def ingredients_for(
-    ctx: RunContext[Userdata],
-    request: Annotated[str, Field(description="Natural language request, e.g. 'ingredients for peanut butter sandwich for two'")],
-) -> str:
-    """Handle high-level ingredient requests like 'ingredients for peanut butter sandwich' or 'get me pasta for two people'.
-    Attempts a map lookup first, then falls back to tag inference.
-    """
-    text = (request or "").strip()
-    servings = _parse_servings_from_text(text)
-
-    # try to extract a dish phrase after common verbs
-    m = re.search(r"ingredients? for (.+)", text, re.I)
-    if m:
-        dish = m.group(1)
+    summary_lines = [f"That's a wrap! What a show, {userdata.player_name or 'Contestant'}! Here's your final scorecard:"]
+    
+    # Determine player style
+    profile = "Based on those scenes, you're a player who "
+    if mentions_absurdity > len(rounds) / 2:
+        profile += "**leans into the absurd** and loves a surprising twist!"
+    elif mentions_character > len(rounds) / 2:
+        profile += "**commits strongly to character** and clearly sets up the scene."
+    elif mentions_emotion > 0:
+        profile += "**brings real emotional depth** to the situation, which is key!"
     else:
-        m2 = re.search(r"(?:make|for making|get me what i need for|i need) (.+)", text, re.I)
-        dish = m2.group(1) if m2 else text
+        profile += "has a fantastic **sense of pacing**! Keep making clear choices."
 
-    # remove trailing 'for X people' fragments
-    dish = re.sub(r"for\s+\w+(?: people| person| persons)?", "", dish, flags=re.I).strip()
-    key = dish.lower()
+    summary_lines.append(profile)
+    summary_lines.append("\n**Final Standout Moments:**")
+    
+    # Highlight the reaction from the final round
+    final_reaction = rounds[-1].get('reaction', 'Great performance overall!') if rounds else 'Fantastic performance!'
+    summary_lines.append(f"- Your last scene got this reaction: '{final_reaction}'")
+    
+    summary_lines.append("\nThanks for battling it out on Improv Battle — hope to see you next time!")
 
-    item_ids = []
-    if key in RECIPE_MAP:
-        item_ids = RECIPE_MAP[key]
-    else:
-        item_ids = _infer_items_from_tags(dish)
-
-    if not item_ids:
-        # Actualizado para sugerir artículos venezolanos
-        return f"Sorry, I couldn't determine ingredients for '{request}'. Try a simpler phrase like 'queso' or 'arepas'."
-
-    added = []
-    for iid in item_ids:
-        item = find_catalog_item_by_id_db(iid)
-        if not item:
-            continue
-        # add with servings as quantity
-        found = False
-        for ci in ctx.userdata.cart:
-            if ci.item_id.lower() == iid.lower():
-                ci.quantity += servings
-                found = True
-                break
-        if not found:
-            ctx.userdata.cart.append(CartItem(item_id=item['id'], name=item['name'], unit_price=float(item['price']), quantity=servings))
-        added.append(item['name'])
-
-    total = cart_total(ctx.userdata.cart)
-    # CAMBIO DE MONEDA: ₹ a $
-    return f"I've added {', '.join(added)} to your cart for '{dish}'. (Servings: {servings}). Cart total: {CURRENCY_SYMBOL}{total:.2f}"
+    userdata.history.append({"time": datetime.utcnow().isoformat() + "Z", "action": "summarize_show"})
+    return "\n".join(summary_lines)
 
 
 @function_tool
-async def place_order(
-    ctx: RunContext[Userdata],
-    customer_name: Annotated[str, Field(description="Customer name")],
-    address: Annotated[str, Field(description="Delivery address")],
-) -> str:
-    if not ctx.userdata.cart:
-        return "Your cart is empty."
-
-    order_id = str(uuid.uuid4())[:8]
-    now = datetime.utcnow().isoformat() + "Z"
-    total = cart_total(ctx.userdata.cart)
-
-    # 1. Persist to DB
-    insert_order_db(order_id=order_id, timestamp=now, total=total, customer_name=customer_name, address=address, status="received", items=ctx.userdata.cart)
-
-    # 2. Clear Cart
-    ctx.userdata.cart = []
-    ctx.userdata.customer_name = customer_name
-
-    # 3. Trigger Background Simulation (Received -> Shipped -> Out for delivery...)
-    try:
-        # create a background task on the running event loop
-        asyncio.create_task(simulate_delivery_flow(order_id))
-    except RuntimeError:
-        # If there is no running loop, schedule on a new loop in a background thread
-        loop = asyncio.new_event_loop()
-        asyncio.get_running_loop() if asyncio.get_event_loop().is_running() else None
-        # fire-and-forget: run in background
-        asyncio.get_event_loop().call_soon_threadsafe(lambda: asyncio.create_task(simulate_delivery_flow(order_id)))
-
-    # CAMBIO DE MONEDA: ₹ a $
-    return f"Order placed successfully! Order ID: {order_id}. Total: {CURRENCY_SYMBOL}{total:.2f}. I have initiated express shipping; the status will update automatically shortly."
+async def stop_show(ctx: RunContext[Userdata], confirm: Annotated[bool, Field(description="Confirm stop", default=False)] = False) -> str:
+    """Allows for a graceful early exit from the show."""
+    userdata = ctx.userdata
+    if not confirm:
+        return "Are you sure you want to stop the show? Say 'stop show yes' to confirm."
+    userdata.improv_state["phase"] = "done"
+    userdata.history.append({"time": datetime.utcnow().isoformat() + "Z", "action": "stop_show"})
+    return "Show stopped. Thanks for coming to Improv Battle, you're a star!"
 
 
-@function_tool
-async def cancel_order(
-    ctx: RunContext[Userdata],
-    order_id: Annotated[str, Field(description="Order ID to cancel")],
-) -> str:
-    o = get_order_db(order_id)
-    if not o:
-        return f"No order found with id {order_id}."
-
-    status = o.get("status", "")
-    if status == "delivered":
-        return f"Order {order_id} has already been delivered and cannot be cancelled."
-
-    if status == "cancelled":
-        return f"Order {order_id} is already cancelled."
-
-    # Update DB
-    update_order_status_db(order_id, "cancelled")
-    return f"Order {order_id} has been cancelled successfully."
-
-
-@function_tool
-async def get_order_status(
-    ctx: RunContext[Userdata],
-    order_id: Annotated[str, Field(description="Order ID to check")],
-) -> str:
-    o = get_order_db(order_id)
-    if not o:
-        return f"No order found with id {order_id}."
-    return f"Order {order_id} status: {o.get('status', 'unknown')}. Updated at: {o.get('updated_at')}"
-
-
-@function_tool
-async def order_history(
-    ctx: RunContext[Userdata],
-    customer_name: Annotated[Optional[str], Field(description="Optional customer name to filter", default=None)] = None,
-) -> str:
-    rows = list_orders_db(limit=5, customer_name=customer_name)
-    if not rows:
-        return "No orders found."
-    lines = []
-    for o in rows:
-        # CAMBIO DE MONEDA: ₹ a $
-        lines.append(f"- {o['order_id']} | {CURRENCY_SYMBOL}{o['total']:.2f} | Status: {o.get('status')}")
-    prefix = "Recent Orders"
-    if customer_name:
-        prefix += f" for {customer_name}"
-    return prefix + ":\n" + "\n".join(lines)
-
-# Agent Definition
-class FoodAgent(Agent):
+# -------------------------
+# The Agent (Improv Host)
+# -------------------------
+class GameMasterAgent(Agent):
     def __init__(self):
-        super().__init__(
-    instructions="""
-    You are **Marielena**, a highly professional, friendly, and enthusiastic AI voice shopping assistant for **'Forum Supermayoristas'**, the major Venezuelan supermarket chain.
-    
-    **Primary Goal:** Help the customer quickly and easily find ingredients, get recipe lists, and manage their shopping cart using only voice commands.
-    
-    ### Key Rules and Persona
-    1. **ALWAYS respond to the customer in SPANISH (español).**
-    2. Be conversational and highly professional. Use friendly Venezuelan phrases occasionally (e.g., '¡Hola!', '¡Chévere!').
-    3. Use the **US Dollar ($)** for all prices and totals, as this is the primary currency for Forum Supermayoristas.
-    4. After using a tool, respond clearly, professionally, and enthusiastically in **SPANISH** based on the tool's result.
-    5. Start the conversation with a warm, Marielena-style greeting in SPANISH (e.g., "¡Hola vale! Soy Marielena de Forum, ¡estoy lista para ayudarte con tus compras!").
-    
-    ### Capabilities and Tool Usage
-    You must use the provided tools to fulfill customer requests.
-    
-    1. **Catalog:** Search for Venezuelan items (e.g., leche, frutas, sal, Pasta, arroz). Use the `find_item` tool.
-    2. **Cart Management:** Use `add_to_cart`, `remove_from_cart`, `update_cart_quantity`, and `show_cart` to manage the customer's items.
-    3. **Recipes:** When a customer asks for a recipe (e.g., Hallacas Venezolanas, Maggi, Paneer Butter Masala), use the `add_recipe` tool. List the ingredients clearly and ask if they want to add them to the cart.
-    4. **Orders:** * When the customer is done, offer to place the order using the `place_order` tool.
-        * When placing an order, mention that **express tracking is enabled**.
-        * You can **CANCEL** an order if the user asks, provided it's not delivered yet (use `cancel_order`).
-        * If the user asks "Where is my order?" (¿Dónde está mi pedido?), use `get_order_status` to check the status. Since the status advances automatically (simulated), encourage them to check back in a few seconds.
-        * Use `order_history` to retrieve past orders.
-    """,
-    tools=[find_item, add_to_cart, remove_from_cart, update_cart_quantity, show_cart, add_recipe, place_order, cancel_order, get_order_status, order_history],
-)
+        # System Prompt aligned with requirements: Role, Style, Rules
+        instructions = """
+        You are the host of a high-energy TV improv show called 'Improv Battle'.
+        Role: High-energy, witty, clear about rules, and acts as the game manager. Guide a single contestant through short improv scenes.
 
+        Behavioural rules:
+            - Introduce the show and explain the rules at the start.
+            - Present clear scenario prompts (who you are, what's happening, what's the tension).
+            - After the player's performance, use the output of `record_performance` to deliver a varied, realistic reaction (supportive, neutral, or mildly critical). The host must never be abusive, only constructive.
+            - Prompt the player clearly for the next action.
+            - Run the configured number of rounds, then summarize the player's style using the `summarize_show` tool.
+            - Keep turns short and exciting.
+            
+        Use the provided tools: start_show, next_scenario, record_performance, summarize_show, stop_show.
+        """
+        super().__init__(
+            instructions=instructions,
+            tools=[start_show, next_scenario, record_performance, summarize_show, stop_show],
+        )
+
+# -------------------------
+# Entrypoint & Prewarm (Standard LiveKit setup)
+# -------------------------
 def prewarm(proc: JobProcess):
-    # load VAD model and stash on process userdata
+    """Pre-loads the VAD model."""
     try:
         proc.userdata["vad"] = silero.VAD.load()
     except Exception:
@@ -683,17 +330,19 @@ def prewarm(proc: JobProcess):
 
 
 async def entrypoint(ctx: JobContext):
+    """Main entrypoint for the agent job."""
     ctx.log_context_fields = {"room": ctx.room.name}
-    logger.info("\n" + "🇻🇪" * 12)
-    logger.info("🚀 STARTING Marielena (Venezuelan Context + Auto-Tracking)")
+    logger.info("\n" + "🎭" * 6)
+    logger.info("🚀 STARTING VOICE IMPROV HOST — Improv Battle")
 
     userdata = Userdata()
 
+    # AgentSession setup: STT (Deepgram), LLM (Gemini), TTS (Murf), Turn Detection
     session = AgentSession(
         stt=deepgram.STT(model="nova-3"),
         llm=google.LLM(model="gemini-2.5-flash"),
         tts=murf.TTS(
-            voice="es-MX-luisa",
+            voice="en-US-marcus",
             style="Conversational",
             text_pacing=True,
         ),
@@ -702,8 +351,9 @@ async def entrypoint(ctx: JobContext):
         userdata=userdata,
     )
 
+    # Start the session with the GameMasterAgent
     await session.start(
-        agent=FoodAgent(),
+        agent=GameMasterAgent(),
         room=ctx.room,
         room_input_options=RoomInputOptions(noise_cancellation=noise_cancellation.BVC()),
     )
