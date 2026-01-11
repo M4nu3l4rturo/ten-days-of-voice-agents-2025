@@ -1,20 +1,60 @@
-import { Button } from '@/components/livekit/button';
+import React from 'react';
 
-function WelcomeImage() {
+// --- UTILIDADES MOCK ---
+const cn = (...classes) => classes.filter(Boolean).join(' ');
+
+/**
+ * Componente Button Mock: Adaptado con colores de bienestar (Teal/Esmeralda)
+ */
+const Button = ({ children, onClick, className, variant = 'default', size = 'default' }) => {
+  const baseClasses = 'inline-flex items-center justify-center whitespace-nowrap rounded-2xl text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50';
+
+  const sizeClasses = {
+    default: 'h-11 px-5 py-2',
+    sm: 'h-9 px-3',
+    lg: 'h-14 px-10 text-lg',
+  }[size];
+
+  const variantClasses = {
+    default: 'bg-emerald-100 text-emerald-900 hover:bg-emerald-200',
+    primary: 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/20 hover:bg-emerald-500 hover:-translate-y-0.5 active:translate-y-0',
+  }[variant];
+
   return (
-    <svg
-      width="64"
-      height="64"
-      viewBox="0 0 64 64"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      className="text-fg0 mb-4 size-16"
+    <button
+      onClick={onClick}
+      className={cn(baseClasses, sizeClasses, variantClasses, className)}
     >
-      <path
-        d="M15 24V40C15 40.7957 14.6839 41.5587 14.1213 42.1213C13.5587 42.6839 12.7956 43 12 43C11.2044 43 10.4413 42.6839 9.87868 42.1213C9.31607 41.5587 9 40.7957 9 40V24C9 23.2044 9.31607 22.4413 9.87868 21.8787C10.4413 21.3161 11.2044 21 12 21C12.7956 21 13.5587 21.3161 14.1213 21.8787C14.6839 22.4413 15 23.2044 15 24ZM22 5C21.2044 5 20.4413 5.31607 19.8787 5.87868C19.3161 6.44129 19 7.20435 19 8V56C19 56.7957 19.3161 57.5587 19.8787 58.1213C20.4413 58.6839 21.2044 59 22 59C22.7956 59 23.5587 58.6839 24.1213 58.1213C24.6839 57.5587 25 56.7957 25 56V8C25 7.20435 24.6839 6.44129 24.1213 5.87868C23.5587 5.31607 22.7956 5 22 5ZM32 13C31.2044 13 30.4413 13.3161 29.8787 13.8787C29.3161 14.4413 29 15.2044 29 16V48C29 48.7957 29.3161 49.5587 29.8787 50.1213C30.4413 50.6839 31.2044 51 32 51C32.7956 51 33.5587 50.6839 34.1213 50.1213C34.6839 49.5587 35 48.7957 35 48V16C35 15.2044 34.6839 14.4413 34.1213 13.8787C33.5587 13.3161 32.7956 13 32 13ZM42 21C41.2043 21 40.4413 21.3161 39.8787 21.8787C39.3161 22.4413 39 23.2044 39 24V40C39 40.7957 39.3161 41.5587 39.8787 42.1213C40.4413 42.6839 41.2043 43 42 43C42.7957 43 43.5587 42.6839 44.1213 42.1213C44.6839 41.5587 45 40.7957 45 40V24C45 23.2044 44.6839 22.4413 44.1213 21.8787C43.5587 21.3161 42.7957 21 42 21ZM52 17C51.2043 17 50.4413 17.3161 49.8787 17.8787C49.3161 18.4413 49 19.2044 49 20V44C49 44.7957 49.3161 45.5587 49.8787 46.1213C50.4413 46.6839 51.2043 47 52 47C52.7957 47 53.5587 46.6839 54.1213 46.1213C54.6839 45.5587 55 44.7957 55 44V20C55 19.2044 54.6839 18.4413 54.1213 17.8787C53.5587 17.3161 52.7957 17 52 17Z"
-        fill="currentColor"
-      />
-    </svg>
+      {children}
+    </button>
+  );
+};
+
+/**
+ * Icono Aura (Loto/Naturaleza) para un ambiente de paz.
+ */
+function AuraIcon() {
+  return (
+    <div className="relative mb-8">
+      {/* Efecto de aura pulsante en el fondo */}
+      <div className="absolute inset-0 bg-emerald-500/20 rounded-full blur-3xl animate-pulse"></div>
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="80"
+        height="80"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="text-emerald-400 relative z-10 drop-shadow-sm"
+      >
+        <path d="M12 3c-1.2 0-2.4.6-3 1.7A5 5 0 0 0 2 9c0 2.8 2.2 5 5 5h10c2.8 0 5-2.2 5-5a5 5 0 0 0-7-4.3c-.6-1.1-1.8-1.7-3-1.7z"></path>
+        <path d="M12 21v-7"></path>
+        <path d="m9 18 3 3 3-3"></path>
+      </svg>
+    </div>
   );
 }
 
@@ -23,39 +63,75 @@ interface WelcomeViewProps {
   onStartCall: () => void;
 }
 
-export const WelcomeView = ({
-  startButtonText,
-  onStartCall,
-  ref,
-}: React.ComponentProps<'div'> & WelcomeViewProps) => {
-  return (
-    <div ref={ref}>
-      <section className="bg-background flex flex-col items-center justify-center text-center">
-        <WelcomeImage />
+/**
+ * Vista de Bienvenida de Aura: Wellness Companion
+ */
+export const WelcomeView = React.forwardRef<HTMLDivElement, WelcomeViewProps>(
+  ({ startButtonText, onStartCall }, ref) => {
+    return (
+      <div 
+        ref={ref} 
+        className="min-h-screen w-full flex items-center justify-center p-6 bg-slate-950 text-slate-100 font-sans selection:bg-emerald-500/30"
+      >
+        <section className="
+          bg-slate-900/60 backdrop-blur-xl p-10 md:p-14 
+          rounded-[2.5rem] shadow-2xl border border-slate-800
+          flex flex-col items-center justify-center text-center max-w-xl w-full
+        ">
+          
+          <AuraIcon />
 
-        <p className="text-foreground max-w-prose pt-1 leading-6 font-medium">
-          Chat live with your voice AI agent
-        </p>
+          <h1 className="text-4xl sm:text-5xl font-light text-white mb-3 tracking-tight">
+            I'm <span className="font-semibold text-emerald-400">Aura</span>
+          </h1>
+          
+          <p className="text-emerald-100/60 text-lg mb-8 font-light">
+            Your gentle companion for mindfulness, <br />growth, and daily reflection.
+          </p>
 
-        <Button variant="primary" size="lg" onClick={onStartCall} className="mt-6 w-64 font-mono">
-          {startButtonText}
-        </Button>
-      </section>
+          <div className="space-y-4 w-full max-w-sm mb-10">
+            {/* Tarjeta informativa sobre la memoria de sesión */}
+            <div className="bg-emerald-950/30 border border-emerald-500/20 p-4 rounded-2xl text-left">
+              <div className="flex items-start gap-3">
+                <div className="mt-1 text-emerald-400 italic">
+                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg>
+                </div>
+                <p className="text-sm text-emerald-100/80 leading-relaxed">
+                  <strong>Session Memory Active:</strong> I remember our previous talks to help you track your mood and wellness goals over time.
+                </p>
+              </div>
+            </div>
+          </div>
 
-      <div className="fixed bottom-5 left-0 flex w-full items-center justify-center">
-        <p className="text-muted-foreground max-w-prose pt-1 text-xs leading-5 font-normal text-pretty md:text-sm">
-          Need help getting set up? Check out the{' '}
-          <a
-            target="_blank"
-            rel="noopener noreferrer"
-            href="https://docs.livekit.io/agents/start/voice-ai/"
-            className="underline"
+          <Button 
+            variant="primary" 
+            size="lg" 
+            onClick={onStartCall} 
+            className="w-full max-w-xs shadow-emerald-500/10"
           >
-            Voice AI quickstart
-          </a>
-          .
-        </p>
+            {startButtonText || "Start Session"}
+          </Button>
+          
+          <p className="mt-6 text-slate-500 text-xs uppercase tracking-[0.2em]">
+            Take a deep breath and begin
+          </p>
+        </section>
+        
+        {/* Footer con estado */}
+        <div className="fixed bottom-6 left-0 w-full flex justify-center">
+          <div className="bg-slate-900/80 px-4 py-2 rounded-full border border-slate-800 flex items-center gap-3">
+            <span className="flex h-2 w-2 relative">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <span className="text-slate-400 text-[10px] font-bold tracking-widest uppercase">
+              Aura is Online & Ready
+            </span>
+          </div>
+        </div>
       </div>
-    </div>
-  );
-};
+    );
+  }
+);
+
+export { WelcomeView as default };
